@@ -1,0 +1,17 @@
+com\cargotracker\model\Cargo.class
+com\cargotracker\service\SeaRoutingService$CachedSeaLeg.class
+com\cargotracker\service\CargoService.class
+com\cargotracker\service\PortService.class
+com\cargotracker\controller\PortController.class
+com\cargotracker\model\Port.class
+com\cargotracker\service\SeaRoutingService$LegGeometryHelper.class
+com\cargotracker\dto\RouteCalculationRequest.class
+com\cargotracker\dto\RouteCalculationResponse.class
+com\cargotracker\controller\RouteController.class
+com\cargotracker\model\Route.class
+com\cargotracker\service\SeaRoutingService.class
+com\cargotracker\model\RouteSegment.class
+com\cargotracker\CargoTrackerApplication.class
+com\cargotracker\service\PortService$1.class
+com\cargotracker\service\RouteOptimizationService.class
+com\cargotracker\model\Ship.class

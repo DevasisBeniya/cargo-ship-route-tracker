@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cargo Ship Route and Load Tracker | MV Pirates Voyager</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Top Navigation Bar -->
+        <header class="app-header">
+            <div class="header-brand">
+                <div class="ship-badge-icon">⚓</div>
+                <div>
+                    <h1>Cargo Ship Route and Load Tracker</h1>
+                    <p class="subtitle">Flagship Vessel: <span class="vessel-name">MV Pirates Voyager</span> • Powered by Eurostat SeaRoute & OpenStreetMap</p>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button id="openCustomPortModalBtn" class="btn btn-secondary">
+                    <span>📍</span> Add Custom Port
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Body Layout: Controls Sidebar + Leaflet Map -->
+        <main class="main-layout">
+            <!-- Sidebar: Itinerary & Cargo Controls -->
+            <aside class="sidebar" id="sidebar">
+                <!-- Section 1: Vessel Capacity -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>1. Vessel Load Capacity</h2>
+                        <span class="badge badge-info">Capacity</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label for="shipCapacityInput">Ship Total Capacity (TEU Boxes):</label>
+                            <div class="input-with-action">
+                                <input type="number" id="shipCapacityInput" value="24000" min="100" max="100000" step="100">
+                                <button type="button" id="resetCapacityBtn" class="btn btn-sm btn-ghost" title="Reset to default 24,000">Default (24k)</button>
+                            </div>
+                            <small class="form-hint">Total cargo unloaded across all stops (including departure) must match this value.</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 2: Port Selection -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>2. Ports & Itinerary Planning</h2>
+                        <span class="badge badge-primary" id="destCounterBadge">0 / 5 Destinations</span>
+                    </div>
+                    <div class="card-body">
+                        <!-- Start Port Dropdown -->
+                        <div class="form-group">
+                            <label for="startPortSelect">Start Port (Departure):</label>
+                            <select id="startPortSelect" class="form-select">
+                                <option value="">Loading international ports...</option>
+                            </select>
+                            <small class="form-hint">Departure origin (e.g. India - Mumbai / JNPT). Boxes can also be unloaded here!</small>
+                        </div>
+
+                        <!-- Destination Ports Multi-select -->
+                        <div class="form-group">
+                            <div class="label-row">
+                                <label>Destination Ports (Select 2 to 5):</label>
+                                <span class="selection-rule-badge">Min 2, Max 5</span>
+                            </div>
+                            <!-- Preset Button for instant demo -->
+                            <div class="preset-strip">
+                                <button type="button" class="btn btn-xs btn-outline" id="presetDemoBtn">
+                                    Demo: Japan + Indonesia + Madagascar
+                                </button>
+                                <button type="button" class="btn btn-xs btn-ghost" id="clearDestsBtn">Clear</button>
+                            </div>
+                            <!-- Search filter for destination ports -->
+                            <input type="text" id="portSearchInput" class="form-input search-input" placeholder="Search port name or country...">
+                            
+                            <!-- Destination Ports List with checkboxes grouped by country -->
+                            <div class="dest-ports-container" id="destPortsContainer">
+                                <div class="loading-state">Loading global seaport catalog...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 3: Cargo Unload Distribution -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>3. Cargo Unload Distribution</h2>
+                        <span id="cargoBalanceBadge" class="badge badge-warning">Unassigned</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="cargo-actions-row">
+                            <p class="section-desc">Specify boxes to unload at each stop (including start port):</p>
+                            <button type="button" id="autoBalanceBtn" class="btn btn-xs btn-secondary" title="Distribute 24,000 evenly">⚡ Auto Balance</button>
+                        </div>
+
+                        <!-- Dynamic Inputs for Start Port + Selected Destinations -->
+                        <div id="cargoAllocationInputs" class="cargo-inputs-list">
+                            <div class="empty-state-notice">Select a start port and at least 2 destinations above to assign cargo unloads.</div>
+                        </div>
+
+                        <!-- Cargo Balance Summary Indicator -->
+                        <div class="cargo-summary-meter">
+                            <div class="meter-info">
+                                <span>Total Assigned:</span>
+                                <span id="totalAssignedText" class="meter-val">0 / 24,000</span>
+                            </div>
+                            <div class="progress-track">
+                                <div id="allocationProgressBar" class="progress-bar-fill fill-warning" style="width: 0%;"></div>
+                            </div>
+                            <div id="cargoValidationMessage" class="validation-feedback"></div>
+                        </div>
+
+                        <!-- Calculate Shortest Route Action -->
+                        <button type="button" id="calculateRouteBtn" class="btn btn-primary btn-block" disabled>
+                            <span class="btn-icon">🧭</span> Calculate Shortest Sea Route
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Section 4: Voyage Telemetry & Execution -->
+                <div class="card" id="voyageExecutionCard" style="display: none;">
+                    <div class="card-header">
+                        <h2>4. Voyage Execution & Tracking</h2>
+                        <span id="voyageStatusBadge" class="badge badge-success">Ready</span>
+                    </div>
+                    <div class="card-body">
+                        <!-- Key Route Metrics -->
+                        <div class="metrics-grid">
+                            <div class="metric-item">
+                                <span class="metric-label">Total Distance</span>
+                                <span class="metric-value" id="metricDistance">0 NM</span>
+                                <small id="metricDistanceKm" class="metric-sub">0 km</small>
+                            </div>
+                            <div class="metric-item">
+                                <span class="metric-label">Total Stops</span>
+                                <span class="metric-value" id="metricStops">0</span>
+                                <small class="metric-sub">Ports</small>
+                            </div>
+                            <div class="metric-item">
+                                <span class="metric-label">Delivered Cargo</span>
+                                <span class="metric-value text-accent" id="metricDelivered">0</span>
+                                <small class="metric-sub">Boxes</small>
+                            </div>
+                            <div class="metric-item">
+                                <span class="metric-label">Cargo on Vessel</span>
+                                <span class="metric-value" id="metricRemaining">24,000</span>
+                                <small class="metric-sub">Boxes Remaining</small>
+                            </div>
+                        </div>
+
+                        <!-- Real-time Delivery Progress Bar -->
+                        <div class="voyage-progress-container">
+                            <div class="progress-header">
+                                <span>Voyage Delivery Progress:</span>
+                                <span id="deliveryPercentageText">0%</span>
+                            </div>
+                            <div class="progress-track large-track">
+                                <div id="deliveryProgressBar" class="progress-bar-fill fill-accent" style="width: 0%;"></div>
+                            </div>
+                        </div>
+
+                        <!-- Current Voyage Event Status Banner -->
+                        <div class="voyage-banner" id="voyageLiveBanner">
+                            <span class="banner-icon">⚓</span>
+                            <span id="voyageLiveText" class="banner-text">Vessel docked at origin. Ready to embark.</span>
+                        </div>
+
+                        <!-- Animation Controls -->
+                        <div class="simulation-controls">
+                            <button type="button" id="startVoyageBtn" class="btn btn-accent">
+                                <span>▶</span> Start Voyage
+                            </button>
+                            <button type="button" id="pauseVoyageBtn" class="btn btn-secondary" style="display: none;">
+                                <span>⏸</span> Pause
+                            </button>
+                            <button type="button" id="resetVoyageBtn" class="btn btn-ghost">
+                                <span>↺</span> Reset
+                            </button>
+                            <div class="speed-controls">
+                                <span class="speed-label">Speed:</span>
+                                <button type="button" class="btn-speed active" data-speed="1">1x</button>
+                                <button type="button" class="btn-speed" data-speed="2">2x</button>
+                                <button type="button" class="btn-speed" data-speed="5">5x</button>
+                            </div>
+                        </div>
+
+                        <!-- Route Legs: one coloured entry per leg (same colours as the map) -->
+                        <div class="legs-panel">
+                            <div class="legs-header">
+                                <h3>Route Legs</h3>
+                                <button type="button" id="showAllLegsBtn" class="btn btn-xs btn-outline active">Show all legs</button>
+                            </div>
+                            <p class="legs-hint">Each colour is one leg of the voyage. Click a leg to see only that leg on the map. Click it again to show all legs.</p>
+                            <div id="legsList" class="legs-list"></div>
+                        </div>
+
+                        <!-- Stop-by-Stop Cargo Table -->
+                        <div class="table-container">
+                            <h3>Port Stop Schedule & Cargo Manifest</h3>
+                            <table class="schedule-table" id="stopsTable">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Port & Country</th>
+                                        <th>Unloaded</th>
+                                        <th>Left on Ship</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="stopsTableBody">
+                                    <!-- Populated dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Map View Stage -->
+            <section class="map-wrapper">
+                <div id="map" class="map-canvas"></div>
+
+                <!-- Floating Map Legend (collapsed by default so it never hides the route) -->
+                <div class="map-overlay-card" id="mapLegend">
+                    <button type="button" class="legend-toggle" id="legendToggleBtn" aria-expanded="false">
+                        <span>Map legend</span>
+                        <span class="legend-chevron" id="legendChevron">&#9650;</span>
+                    </button>
+                    <div class="legend-body" id="legendBody" style="display: none;">
+                        <div class="legend-items">
+                            <div class="legend-item">
+                                <span class="legend-dot dot-origin">1</span>
+                                <span>Start port (departure)</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-dot dot-dest">2</span>
+                                <span>Destination stops (numbered in visiting order)</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-arrow-sample">&#10148;</span>
+                                <span>Each leg has its own colour. Arrows show the direction of sailing.</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-sample legend-solid"></span>
+                                <span>Solid line = already sailed</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-sample legend-dashed"></span>
+                                <span>Dashed line = still to sail</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-ship">🚢</span>
+                                <span>MV Pirates Voyager</span>
+                            </div>
+                        </div>
+                        <div class="legend-credit">© OpenStreetMap contributors</div>
+                        <div class="map-hint">
+                            💡 Tip: Click anywhere in the ocean to register a <strong>Custom Port</strong>!
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Toast Notifications Container -->
+                <div id="toastContainer" class="toast-container"></div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modal: Add Custom Port Dialog -->
+    <div id="customPortModal" class="modal-backdrop" style="display: none;">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>📍 Add Custom Sea Port</h3>
+                <button type="button" class="modal-close" id="closeCustomPortModalBtn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-desc">Add a custom coastal commercial port. Click on the map to auto-fill coordinates, or type them below.</p>
+                <form id="customPortForm">
+                    <div class="form-group">
+                        <label for="customPortName">Port Name *:</label>
+                        <input type="text" id="customPortName" class="form-input" placeholder="e.g. New Coastal Hub" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="customCountry">Country *:</label>
+                        <input type="text" id="customCountry" class="form-input" placeholder="e.g. India, Japan, Custom" required>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group col">
+                            <label for="customLatitude">Latitude (-90 to 90) *:</label>
+                            <input type="number" id="customLatitude" class="form-input" step="0.0001" placeholder="e.g. 19.0760" required>
+                        </div>
+                        <div class="form-group col">
+                            <label for="customLongitude">Longitude (-180 to 180) *:</label>
+                            <input type="number" id="customLongitude" class="form-input" step="0.0001" placeholder="e.g. 72.8777" required>
+                        </div>
+                    </div>
+                    <div id="customPortModalError" class="validation-feedback error-feedback" style="display: none;"></div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" id="cancelCustomPortBtn">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="saveCustomPortBtn">Save & Add Port</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
